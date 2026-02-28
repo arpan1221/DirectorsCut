@@ -45,7 +45,8 @@ def mock_veo_operation(video_bytes: bytes = b"fakevideobytes") -> MagicMock:
     """Return a mock Veo operation that is immediately done."""
     op = MagicMock()
     op.done = True
-    op.response.generated_videos[0].video.fetch.return_value = video_bytes
+    # SDK: operation.result.generated_videos[0].video.video_bytes (no .fetch() method)
+    op.result.generated_videos[0].video.video_bytes = video_bytes
     return op
 
 
@@ -59,17 +60,13 @@ async def test_generate_scene_veo_returns_video():
     decision = make_decision()
     op = mock_veo_operation(b"fakevideobytes")
 
-    async def fake_to_thread(fn, *args, **kwargs):
-        """Simulate asyncio.to_thread: call fn synchronously for test purposes."""
-        return fn(*args, **kwargs)
-
     with (
         patch("app.content_pipeline._VEO_ENABLED", True),
         patch("app.content_pipeline.client") as mock_client,
-        patch("app.content_pipeline.asyncio.to_thread", side_effect=fake_to_thread),
     ):
-        mock_client.models.generate_videos.return_value = op
-        mock_client.operations.get.return_value = op
+        # gen_video() uses client.aio.* natively (no asyncio.to_thread)
+        mock_client.aio.models.generate_videos = AsyncMock(return_value=op)
+        mock_client.aio.operations.get = AsyncMock(return_value=op)
         mock_client.aio.models.generate_content = AsyncMock(return_value=mock_audio_response())
         assets = await generate_scene(decision, scene)
     assert isinstance(assets, SceneAssets)
@@ -85,8 +82,9 @@ async def test_generate_scene_veo_failure_falls_back_to_image():
     with (
         patch("app.content_pipeline._VEO_ENABLED", True),
         patch("app.content_pipeline.client") as mock_client,
-        patch("app.content_pipeline.asyncio.to_thread", side_effect=Exception("Veo down")),
     ):
+        # Veo call raises — gen_video() returns None, triggering image fallback
+        mock_client.aio.models.generate_videos = AsyncMock(side_effect=Exception("Veo down"))
         mock_client.aio.models.generate_content = AsyncMock(side_effect=[
             mock_audio_response(),   # TTS (runs in parallel with Veo attempt)
             mock_image_response(),   # image fallback after Veo fails

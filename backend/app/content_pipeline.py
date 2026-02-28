@@ -78,10 +78,8 @@ async def generate_scene(
             return None
         try:
             prompt = _build_visual_prompt(scene, genre, decision)
-            # Veo uses generate_videos (long-running operation), not generate_content.
-            # Wrap in asyncio.to_thread because the SDK call is synchronous.
-            operation = await asyncio.to_thread(
-                client.models.generate_videos,
+            # client.aio.models.generate_videos is natively async — no asyncio.to_thread needed.
+            operation = await client.aio.models.generate_videos(
                 model=_VEO_MODEL,
                 prompt=prompt,
                 config=types.GenerateVideosConfig(
@@ -99,10 +97,13 @@ async def generate_scene(
                         f"Veo timed out after {_VEO_TIMEOUT_SECONDS}s for scene '{scene.id}'"
                     )
                 await asyncio.sleep(_VEO_POLL_INTERVAL)
-                operation = await asyncio.to_thread(client.operations.get, operation)
+                operation = await client.aio.operations.get(operation)
 
-            raw_video = operation.response.generated_videos[0].video
-            video_bytes: bytes = await asyncio.to_thread(raw_video.fetch)
+            # operation.result (not .response) holds the GenerateVideosResponse.
+            # Video.video_bytes is a direct attribute — no .fetch() method exists.
+            video_bytes: bytes = operation.result.generated_videos[0].video.video_bytes
+            if not video_bytes:
+                raise ValueError("Veo returned video with empty bytes")
             return base64.b64encode(video_bytes).decode()
         except Exception as e:
             logger.error(f"Veo generation failed for scene '{scene.id}', will fall back to image: {e}")
