@@ -32,7 +32,8 @@ _FALLBACK = {
 
 async def analyze_frame(frame_base64: str) -> EmotionReading:
     try:
-        response = client.models.generate_content(
+        # Async client — does not block the event loop
+        response = await client.aio.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(

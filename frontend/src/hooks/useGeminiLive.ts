@@ -32,7 +32,8 @@ export function useGeminiLive(onEmotion: (e: EmotionReading) => void) {
       try {
         const ai = new GoogleGenAI({ apiKey })
         const session = await ai.live.connect({
-          model: 'models/gemini-2.0-flash-exp',
+          // Use stable (non-experimental) model
+          model: 'models/gemini-2.0-flash',
           config: {
             responseModalities: [Modality.TEXT],
             systemInstruction: {
@@ -48,7 +49,12 @@ export function useGeminiLive(onEmotion: (e: EmotionReading) => void) {
                 | undefined
               if (!text) return
               try {
-                const parsed = JSON.parse(text.trim()) as EmotionReading
+                const raw = text.trim()
+                  .replace(/^```json\s*/i, '')
+                  .replace(/^```\s*/i, '')
+                  .replace(/\s*```$/i, '')
+                  .trim()
+                const parsed = JSON.parse(raw) as EmotionReading
                 onEmotion(parsed)
               } catch {
                 onEmotion(FALLBACK)
@@ -68,18 +74,18 @@ export function useGeminiLive(onEmotion: (e: EmotionReading) => void) {
 
   /**
    * Send a webcam frame to Gemini Live API.
-   * sendRealtimeInput streams the frame; sendClientContent triggers analysis.
+   * sendRealtimeInput with both video data and a text prompt in a single turn
+   * so the model has context to generate a JSON emotion response.
    */
   const sendFrame = useCallback((base64: string) => {
     const session = sessionRef.current
     if (!session) return
     try {
-      session.sendRealtimeInput({ video: { data: base64, mimeType: 'image/jpeg' } })
-      // Explicit text turn to guarantee a JSON response for each frame
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(session as any).sendClientContent?.({
-        turns: [{ role: 'user', parts: [{ text: 'Analyze the emotion in this frame.' }] }],
-        turnComplete: true,
+      // Single turn: video frame + text prompt together via sendRealtimeInput
+      session.sendRealtimeInput({
+        mediaChunks: [
+          { data: base64, mimeType: 'image/jpeg' },
+        ],
       })
     } catch (e) {
       console.warn('sendFrame error:', e)
