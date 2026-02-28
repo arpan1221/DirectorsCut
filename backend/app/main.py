@@ -183,6 +183,51 @@ async def ws_session(websocket: WebSocket) -> None:
                 sessions[id(websocket)] = (state, accumulator, frame_count)
 
             # ----------------------------------------------------------------
+            # "emotion" — pre-computed reading from Gemini Live API (React)
+            # Treated identically to "frame" after analysis step
+            # ----------------------------------------------------------------
+            elif msg_type == "emotion":
+                reading = EmotionReading(**msg["data"])
+                # Echo back for UI display (same protocol as frame path)
+                await websocket.send_text(
+                    json.dumps({"type": "emotion", "data": reading.model_dump()})
+                )
+                accumulator.add_reading(reading)
+                frame_count += 1
+                sessions[id(websocket)] = (state, accumulator, frame_count)
+
+                current_scene = story_engine.get_scene(state.current_scene_id, story_data)
+                frames_needed = max(1, current_scene.duration_seconds // 8)
+
+                if frame_count >= frames_needed and current_scene.next is not None:
+                    next_node = story_engine.get_scene(current_scene.next, story_data)
+                    if next_node.is_decision_point:
+                        await websocket.send_text(json.dumps({"type": "deciding"}))
+                        decision = await director_agent.decide(
+                            accumulator.get_summary(), state, story_data
+                        )
+                    else:
+                        decision = SceneDecision(next_scene_id=next_node.id)
+
+                    state = story_engine.advance(state, decision.next_scene_id)
+                    new_scene = story_engine.get_scene(decision.next_scene_id, story_data)
+                    assets = await content_pipeline.generate_scene(decision, new_scene)
+                    frame_count = 0
+                    sessions[id(websocket)] = (state, accumulator, frame_count)
+
+                    await websocket.send_text(
+                        json.dumps({"type": "scene", "assets": assets.model_dump()})
+                    )
+                    if new_scene.next is None and not new_scene.is_decision_point:
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "complete",
+                                "ending": new_scene.id,
+                                "scenes_played": state.scenes_played,
+                            })
+                        )
+
+            # ----------------------------------------------------------------
             # "frame" — analyze emotion, maybe advance to next scene
             # ----------------------------------------------------------------
             elif msg_type == "frame":
