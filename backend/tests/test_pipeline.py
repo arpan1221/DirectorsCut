@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -45,10 +45,10 @@ async def test_generate_scene_returns_assets():
     scene = make_scene()
     decision = make_decision()
     with patch("app.content_pipeline.client") as mock_client:
-        mock_client.models.generate_content.side_effect = [
+        mock_client.aio.models.generate_content = AsyncMock(side_effect=[
             mock_image_response(),
             mock_audio_response(),
-        ]
+        ])
         assets = await generate_scene(decision, scene)
     assert isinstance(assets, SceneAssets)
     assert assets.scene_id == scene.id
@@ -62,12 +62,12 @@ async def test_generate_scene_image_fallback():
     decision = make_decision()
 
     def side_effect(model, **kwargs):
-        if "image" in model:
+        if "tts" not in model:  # image model — force failure
             raise Exception("Image API down")
         return mock_audio_response()
 
     with patch("app.content_pipeline.client") as mock_client:
-        mock_client.models.generate_content.side_effect = side_effect
+        mock_client.aio.models.generate_content = AsyncMock(side_effect=side_effect)
         assets = await generate_scene(decision, scene)
     assert assets.image_base64 is None
     assert assets.audio_base64 == "base64audiodata"
@@ -78,12 +78,12 @@ async def test_generate_scene_tts_fallback():
     decision = make_decision()
 
     def side_effect(model, **kwargs):
-        if "tts" in model:
+        if "tts" in model:  # TTS model — force failure
             raise Exception("TTS API down")
         return mock_image_response()
 
     with patch("app.content_pipeline.client") as mock_client:
-        mock_client.models.generate_content.side_effect = side_effect
+        mock_client.aio.models.generate_content = AsyncMock(side_effect=side_effect)
         assets = await generate_scene(decision, scene)
     assert assets.image_base64 == "base64imagedata"
     assert assets.audio_base64 is None
@@ -93,14 +93,14 @@ async def test_generate_scene_cache_hit():
     scene = make_scene()
     decision = make_decision()
     with patch("app.content_pipeline.client") as mock_client:
-        mock_client.models.generate_content.side_effect = [
+        mock_client.aio.models.generate_content = AsyncMock(side_effect=[
             mock_image_response(),
             mock_audio_response(),
-        ]
+        ])
         first = await generate_scene(decision, scene)
         second = await generate_scene(decision, scene)
     # Only 2 API calls total (image + audio) for first call; second is cached
-    assert mock_client.models.generate_content.call_count == 2
+    assert mock_client.aio.models.generate_content.call_count == 2
     assert first is second
 
 
@@ -108,12 +108,12 @@ async def test_generate_scene_parallel():
     scene = make_scene()
     decision = make_decision()
     with patch("app.content_pipeline.client") as mock_client:
-        mock_client.models.generate_content.side_effect = [
+        mock_client.aio.models.generate_content = AsyncMock(side_effect=[
             mock_image_response(),
             mock_audio_response(),
-        ]
+        ])
         assets = await generate_scene(decision, scene)
     # asyncio.gather fires both calls; verify both returned successfully
     assert assets.image_base64 is not None
     assert assets.audio_base64 is not None
-    assert mock_client.models.generate_content.call_count == 2
+    assert mock_client.aio.models.generate_content.call_count == 2

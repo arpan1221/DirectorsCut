@@ -1,4 +1,5 @@
-from unittest.mock import patch
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,22 +18,36 @@ def make_summary(emotion: str = "engaged") -> EmotionSummary:
     )
 
 
+def mock_workflow_response(next_scene_id: str = "upstairs_door") -> MagicMock:
+    """Return a mock AgentWorkflow whose run() yields a proper director JSON response."""
+    mock_output = MagicMock()
+    mock_output.response.content = json.dumps({
+        "next_scene_id": next_scene_id,
+        "mood_shift": "tense",
+        "pacing": "medium",
+        "reasoning": "Viewer is engaged, deepening the mystery.",
+    })
+    mock_workflow = MagicMock()
+    mock_workflow.run = AsyncMock(return_value=mock_output)
+    return mock_workflow
+
+
 async def test_decide_non_decision_point(story_data):
-    # opening.next = "foyer" which is NOT a decision point
+    # opening.next = "foyer" which is NOT a decision point — workflow never called
     state = StoryState(
         current_scene_id="opening",
         scenes_played=[],
         current_chapter="The Arrival",
         genre="mystery",
     )
-    with patch("app.director_agent.client") as mock_client:
+    with patch("app.director_agent._get_workflow") as mock_get_workflow:
         decision = await decide(make_summary(), state, story_data)
-    mock_client.models.generate_content.assert_not_called()
+    mock_get_workflow.assert_not_called()
     assert isinstance(decision, SceneDecision)
     assert decision.next_scene_id == "foyer"
 
 
-async def test_decide_at_decision_point_calls_gemini(story_data, mock_gemini_director_response):
+async def test_decide_at_decision_point_calls_workflow(story_data):
     # sound_upstairs.next = "decision_1" which IS a decision point
     state = StoryState(
         current_scene_id="sound_upstairs",
@@ -40,24 +55,25 @@ async def test_decide_at_decision_point_calls_gemini(story_data, mock_gemini_dir
         current_chapter="The Arrival",
         genre="mystery",
     )
-    with patch("app.director_agent.client") as mock_client:
-        mock_client.models.generate_content.return_value = mock_gemini_director_response
+    mock_workflow = mock_workflow_response("upstairs_door")
+    with patch("app.director_agent._get_workflow", return_value=mock_workflow):
         decision = await decide(make_summary("engaged"), state, story_data)
-    mock_client.models.generate_content.assert_called_once()
+    mock_workflow.run.assert_called_once()
     assert isinstance(decision, SceneDecision)
     assert decision.next_scene_id == "upstairs_door"
     assert decision.reasoning != ""
 
 
-async def test_decide_fallback_on_gemini_failure(story_data):
+async def test_decide_fallback_on_workflow_failure(story_data):
     state = StoryState(
         current_scene_id="sound_upstairs",
         scenes_played=[],
         current_chapter="The Arrival",
         genre="mystery",
     )
-    with patch("app.director_agent.client") as mock_client:
-        mock_client.models.generate_content.side_effect = Exception("Gemini down")
+    mock_workflow = MagicMock()
+    mock_workflow.run = AsyncMock(side_effect=Exception("LlamaIndex down"))
+    with patch("app.director_agent._get_workflow", return_value=mock_workflow):
         decision = await decide(make_summary("engaged"), state, story_data)
     assert isinstance(decision, SceneDecision)
     # "engaged" → "upstairs_door" per decision_1 adaptation_rules
@@ -104,8 +120,9 @@ async def test_decide_uses_default_when_no_emotion_match(story_data):
     state = StoryState(
         current_scene_id="scene_a", scenes_played=[], current_chapter="Ch", genre="mystery"
     )
-    with patch("app.director_agent.client") as mock_client:
-        mock_client.models.generate_content.side_effect = Exception("skip gemini")
+    mock_workflow = MagicMock()
+    mock_workflow.run = AsyncMock(side_effect=Exception("skip workflow"))
+    with patch("app.director_agent._get_workflow", return_value=mock_workflow):
         decision = await decide(make_summary("engaged"), state, custom_data)
     # "engaged" not in adaptation_rules → falls back to "default" key
     assert decision.next_scene_id == "default_scene"
