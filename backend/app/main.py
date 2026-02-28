@@ -267,7 +267,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
                 current_scene = story_engine.get_scene(state.current_scene_id, story_data)
-                frames_needed = max(1, current_scene.duration_seconds // 15)
+                frames_needed = max(1, current_scene.duration_seconds // 10)
 
                 if frame_count >= frames_needed and current_scene.next is not None:
                     next_node = story_engine.get_scene(current_scene.next, story_data)
@@ -318,7 +318,7 @@ async def ws_session(websocket: WebSocket) -> None:
 
                 # Check if it's time to advance
                 current_scene = story_engine.get_scene(state.current_scene_id, story_data)
-                frames_needed = max(1, current_scene.duration_seconds // 15)
+                frames_needed = max(1, current_scene.duration_seconds // 10)
 
                 if frame_count >= frames_needed and current_scene.next is not None:
                     next_node = story_engine.get_scene(current_scene.next, story_data)

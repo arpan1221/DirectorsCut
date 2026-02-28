@@ -4,6 +4,18 @@ import type { BackendMessage, EmotionReading } from '../types'
 const WS_PATH = '/ws/session'
 const RECONNECT_DELAY_MS = 2500
 
+function buildWsUrl(): string {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL as string | undefined
+  if (backendUrl) {
+    const parsed = new URL(backendUrl)
+    const wsProto = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProto}//${parsed.host}${WS_PATH}`
+  }
+  // Same-origin fallback for local Docker / Vite dev
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}${WS_PATH}`
+}
+
 export function useBackendWS(onMessage: (msg: BackendMessage) => void) {
   const wsRef = useRef<WebSocket | null>(null)
   const [connected, setConnected] = useState(false)
@@ -12,8 +24,7 @@ export function useBackendWS(onMessage: (msg: BackendMessage) => void) {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return
 
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${window.location.host}${WS_PATH}`)
+    const ws = new WebSocket(buildWsUrl())
 
     ws.onopen = () => setConnected(true)
     ws.onmessage = (evt) => {

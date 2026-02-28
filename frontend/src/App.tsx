@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCamera } from './hooks/useCamera'
 import { useGeminiLive } from './hooks/useGeminiLive'
 import { useBackendWS } from './hooks/useBackendWS'
+import { StoryMap } from './StoryMap'
 import type { AppState, BackendMessage, EmotionReading, SceneAssets } from './types'
 
 // Vite injects VITE_* vars at build time; undefined in dev without .env.local
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) ?? ''
 
-const FRAME_INTERVAL_MS = 15_000
+const FRAME_INTERVAL_MS = 10_000
 
 const GENRES = ['mystery', 'thriller', 'horror', 'sci-fi']
 
@@ -335,17 +336,13 @@ export default function App() {
             </div>
           </div>
 
-          {/* Film path */}
+          {/* Story map */}
           <div className="scene-list-section">
-            <div className="section-label">Film Path</div>
-            <div className="scene-list">
-              {scenesPlayed.map((id, i) => (
-                <div key={i} className={`scene-entry ${i === scenesPlayed.length - 1 ? 'current' : ''}`}>
-                  <span className="s-num">{String(i + 1).padStart(2, '0')}</span>
-                  <span>{id.replace(/_/g, ' ')}</span>
-                </div>
-              ))}
-            </div>
+            <div className="section-label">Story Map</div>
+            <StoryMap
+              scenesPlayed={scenesPlayed}
+              currentEmotion={emotion?.primary_emotion ?? null}
+            />
           </div>
         </aside>
       </main>

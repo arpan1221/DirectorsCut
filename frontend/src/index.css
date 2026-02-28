@@ -247,17 +247,12 @@ video.scene-img.visible {
 }
 .hist-dot.active { border-color: var(--gold-dim); background: var(--bg); }
 
-/* ── SCENE LIST ──────────────────────────────────────────────────── */
-.scene-list-section { flex: 1; overflow-y: auto; padding: 10px 14px; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
-.scene-list { }
-.scene-entry {
-  font-size: 9px; letter-spacing: 0.08em; color: var(--white-faint);
-  padding: 4px 0; border-bottom: 1px solid var(--border);
-  display: flex; gap: 6px; align-items: center; text-transform: uppercase;
+/* ── STORY MAP ───────────────────────────────────────────────────── */
+.scene-list-section {
+  flex: 1; overflow-y: auto; padding: 10px 14px; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
 }
-.scene-entry .s-num { color: var(--gold-dim); font-size: 8px; flex-shrink: 0; }
-.scene-entry.current { color: var(--white); }
-.scene-entry.current .s-num { color: var(--gold); }
+.scene-list-section svg text { user-select: none; }
 
 /* ── INFO BAR ────────────────────────────────────────────────────── */
 .info-bar {
