@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 
 from google import genai
@@ -29,7 +30,10 @@ async def generate_scene(decision: SceneDecision, scene: SceneData) -> SceneAsse
                     response_modalities=["image"],
                 ),
             )
-            return response.candidates[0].content.parts[0].inline_data.data
+            raw = response.candidates[0].content.parts[0].inline_data.data
+            if isinstance(raw, bytes):
+                return base64.b64encode(raw).decode()
+            return raw
         except Exception as e:
             logger.error(f"Image generation failed: {e}")
             return None
@@ -51,7 +55,10 @@ async def generate_scene(decision: SceneDecision, scene: SceneData) -> SceneAsse
                     ),
                 ),
             )
-            return response.candidates[0].content.parts[0].inline_data.data
+            raw = response.candidates[0].content.parts[0].inline_data.data
+            if isinstance(raw, bytes):
+                return base64.b64encode(raw).decode()
+            return raw
         except Exception as e:
             logger.error(f"TTS generation failed: {e}")
             return None

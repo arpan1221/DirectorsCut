@@ -132,7 +132,7 @@ async def _send_opening_scene(
     decision = SceneDecision(next_scene_id="opening")
     assets = await content_pipeline.generate_scene(decision, opening_scene)
     await websocket.send_text(
-        json.dumps({"type": "scene", "assets": assets.model_dump()})
+        json.dumps({"type": "scene", "assets": assets.model_dump(mode="json")})
     )
     return state, 0
 
@@ -190,7 +190,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 reading = EmotionReading(**msg["data"])
                 # Echo back for UI display (same protocol as frame path)
                 await websocket.send_text(
-                    json.dumps({"type": "emotion", "data": reading.model_dump()})
+                    json.dumps({"type": "emotion", "data": reading.model_dump(mode="json")})
                 )
                 accumulator.add_reading(reading)
                 frame_count += 1
@@ -216,7 +216,7 @@ async def ws_session(websocket: WebSocket) -> None:
                     sessions[id(websocket)] = (state, accumulator, frame_count)
 
                     await websocket.send_text(
-                        json.dumps({"type": "scene", "assets": assets.model_dump()})
+                        json.dumps({"type": "scene", "assets": assets.model_dump(mode="json")})
                     )
                     if new_scene.next is None and not new_scene.is_decision_point:
                         await websocket.send_text(
@@ -236,7 +236,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 # Analyze emotion from frame
                 reading: EmotionReading = await emotion_service.analyze_frame(frame_b64)
                 await websocket.send_text(
-                    json.dumps({"type": "emotion", "data": reading.model_dump()})
+                    json.dumps({"type": "emotion", "data": reading.model_dump(mode="json")})
                 )
                 accumulator.add_reading(reading)
                 frame_count += 1
@@ -269,7 +269,7 @@ async def ws_session(websocket: WebSocket) -> None:
                     sessions[id(websocket)] = (state, accumulator, frame_count)
 
                     await websocket.send_text(
-                        json.dumps({"type": "scene", "assets": assets.model_dump()})
+                        json.dumps({"type": "scene", "assets": assets.model_dump(mode="json")})
                     )
 
                     # Ending detection: next is None and not a decision point
