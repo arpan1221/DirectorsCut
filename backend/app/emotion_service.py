@@ -33,7 +33,7 @@ _FALLBACK = {
 async def analyze_frame(frame_base64: str) -> EmotionReading:
     try:
         response = client.models.generate_content(
-            model="gemini-3-flash",
+            model="gemini-2.0-flash",
             contents=[
                 types.Part.from_bytes(
                     data=base64.b64decode(frame_base64),

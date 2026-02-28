@@ -49,7 +49,7 @@ async def decide(
             '"reasoning": "One sentence explaining your choice"}'
         )
         response = client.models.generate_content(
-            model="gemini-3-pro-preview",
+            model="gemini-2.5-pro",
             contents=system_prompt,
             config=types.GenerateContentConfig(temperature=0.8),
         )
