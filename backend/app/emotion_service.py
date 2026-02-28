@@ -33,7 +33,7 @@ _FALLBACK = {
 async def analyze_frame(frame_base64: str) -> EmotionReading:
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(
                     data=base64.b64decode(frame_base64),
@@ -41,9 +41,14 @@ async def analyze_frame(frame_base64: str) -> EmotionReading:
                 ),
                 _EMOTION_PROMPT,
             ],
-            config=types.GenerateContentConfig(temperature=0.3),
+            config=types.GenerateContentConfig(
+                temperature=0.3,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
         )
-        data = json.loads(response.text)
+        # Strip markdown fences if model wraps JSON in ```json ... ```
+        raw = (response.text or "").strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        data = json.loads(raw)
         return EmotionReading(**data)
     except Exception as e:
         logger.error(f"analyze_frame failed: {e}")
