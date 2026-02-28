@@ -1,15 +1,21 @@
+import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# Must run before app modules are imported — genai.Client() reads GOOGLE_API_KEY at instantiation
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app import content_pipeline, director_agent, emotion_service, story_engine
+from app import content_pipeline, director_agent, emotion_service, narrator_agent, story_engine
 from app.emotion_service import EmotionAccumulator
 from app.models import (
     EmotionReading,
@@ -29,6 +35,7 @@ logger = logging.getLogger(__name__)
 story_data: dict = {}
 _rest_state: StoryState = StoryState()
 sessions: dict[int, tuple[StoryState, EmotionAccumulator, int]] = {}
+_story_ready = asyncio.Event()
 
 
 # ---------------------------------------------------------------------------
@@ -36,11 +43,11 @@ sessions: dict[int, tuple[StoryState, EmotionAccumulator, int]] = {}
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    load_dotenv()
     global story_data
     story_path = Path(__file__).parent.parent.parent / "story.json"
     story_data = story_engine.load_story(str(story_path))
     logger.info(f"Loaded story with {len(story_data.get('scenes', {}))} scenes")
+    _story_ready.set()
     yield
 
 
@@ -49,12 +56,18 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Director's Cut API", lifespan=lifespan)
 
+# Restrict CORS to known frontends; fall back to env var for deployed environments
+_allowed_origins = os.getenv(
+    "CORS_ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:5173",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["content-type"],
 )
 
 # Mount frontend static files if the directory exists
@@ -83,12 +96,14 @@ async def health() -> dict:
 
 @app.post("/api/emotion")
 async def post_emotion(body: FrameInput) -> EmotionReading:
+    await _story_ready.wait()
     return await emotion_service.analyze_frame(body.image_base64)
 
 
 @app.post("/api/director/decide")
 async def post_director_decide(summary: EmotionSummary) -> SceneDecision:
     global _rest_state
+    await _story_ready.wait()
     return await director_agent.decide(summary, _rest_state, story_data)
 
 
@@ -99,6 +114,7 @@ async def post_content_generate(req: GenerateRequest) -> SceneAssets:
 
 @app.get("/api/story/scene/{scene_id}")
 async def get_story_scene(scene_id: str) -> SceneData:
+    await _story_ready.wait()
     try:
         return story_engine.get_scene(scene_id, story_data)
     except ValueError as e:
@@ -114,12 +130,32 @@ async def get_story_state() -> StoryState:
 async def post_story_reset() -> StoryState:
     global _rest_state
     _rest_state = StoryState()
+    content_pipeline.clear_cache()
     return _rest_state
 
 
 # ---------------------------------------------------------------------------
 # WebSocket /ws/session
 # ---------------------------------------------------------------------------
+
+
+async def _generate_with_narrator(
+    decision: SceneDecision,
+    scene: SceneData,
+    accumulator: EmotionAccumulator,
+    state: StoryState,
+) -> SceneAssets:
+    """Run Narrator Agent to personalise narration, then generate scene assets."""
+    if accumulator.history and scene.narration:
+        adapted = await narrator_agent.adapt_narration(
+            seed=scene.narration,
+            mood=decision.mood_shift,
+            pacing=decision.pacing.value,
+            emotion=accumulator.get_summary(),
+            scenes_played=state.scenes_played,
+        )
+        decision = decision.model_copy(update={"override_narration": adapted})
+    return await content_pipeline.generate_scene(decision, scene)
 
 
 async def _send_opening_scene(
@@ -140,6 +176,7 @@ async def _send_opening_scene(
 @app.websocket("/ws/session")
 async def ws_session(websocket: WebSocket) -> None:
     await websocket.accept()
+    await _story_ready.wait()
 
     # Initialise per-session state
     state = StoryState()
@@ -169,6 +206,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 state = StoryState(genre=genre)
                 accumulator = EmotionAccumulator()
                 frame_count = 0
+                content_pipeline.clear_cache()
                 state, frame_count = await _send_opening_scene(websocket, state, accumulator)
                 sessions[id(websocket)] = (state, accumulator, frame_count)
 
@@ -179,6 +217,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 state = StoryState(genre=state.genre)
                 accumulator = EmotionAccumulator()
                 frame_count = 0
+                content_pipeline.clear_cache()
                 state, frame_count = await _send_opening_scene(websocket, state, accumulator)
                 sessions[id(websocket)] = (state, accumulator, frame_count)
 
@@ -197,7 +236,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 sessions[id(websocket)] = (state, accumulator, frame_count)
 
                 current_scene = story_engine.get_scene(state.current_scene_id, story_data)
-                frames_needed = max(1, current_scene.duration_seconds // 8)
+                frames_needed = max(1, current_scene.duration_seconds // 15)
 
                 if frame_count >= frames_needed and current_scene.next is not None:
                     next_node = story_engine.get_scene(current_scene.next, story_data)
@@ -211,7 +250,7 @@ async def ws_session(websocket: WebSocket) -> None:
 
                     state = story_engine.advance(state, decision.next_scene_id)
                     new_scene = story_engine.get_scene(decision.next_scene_id, story_data)
-                    assets = await content_pipeline.generate_scene(decision, new_scene)
+                    assets = await _generate_with_narrator(decision, new_scene, accumulator, state)
                     frame_count = 0
                     sessions[id(websocket)] = (state, accumulator, frame_count)
 
@@ -244,7 +283,7 @@ async def ws_session(websocket: WebSocket) -> None:
 
                 # Check if it's time to advance
                 current_scene = story_engine.get_scene(state.current_scene_id, story_data)
-                frames_needed = max(1, current_scene.duration_seconds // 8)
+                frames_needed = max(1, current_scene.duration_seconds // 15)
 
                 if frame_count >= frames_needed and current_scene.next is not None:
                     next_node = story_engine.get_scene(current_scene.next, story_data)
@@ -263,8 +302,8 @@ async def ws_session(websocket: WebSocket) -> None:
                     state = story_engine.advance(state, decision.next_scene_id)
                     new_scene = story_engine.get_scene(decision.next_scene_id, story_data)
 
-                    # Generate image + audio in parallel
-                    assets = await content_pipeline.generate_scene(decision, new_scene)
+                    # Narrator adapts narration, then content pipeline generates image + audio
+                    assets = await _generate_with_narrator(decision, new_scene, accumulator, state)
                     frame_count = 0
                     sessions[id(websocket)] = (state, accumulator, frame_count)
 
@@ -292,7 +331,7 @@ async def ws_session(websocket: WebSocket) -> None:
             await websocket.send_text(
                 json.dumps({"type": "error", "message": "Internal server error"})
             )
-        except Exception:
-            pass
+        except Exception as send_err:
+            logger.warning(f"WS session {id(websocket)} failed to send error: {send_err}")
     finally:
         sessions.pop(id(websocket), None)
