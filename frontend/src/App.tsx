@@ -7,7 +7,9 @@ import type { AppState, BackendMessage, EmotionReading, SceneAssets } from './ty
 // Vite injects VITE_* vars at build time; undefined in dev without .env.local
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string) ?? ''
 
-const FRAME_INTERVAL_MS = 8_000
+const FRAME_INTERVAL_MS = 15_000
+
+const GENRES = ['mystery', 'thriller', 'horror', 'sci-fi']
 
 const EMOTION_EMOJI: Record<string, string> = {
   engaged: '😊', bored: '😑', confused: '🤔',
@@ -18,9 +20,11 @@ const EMOTION_COLOR: Record<string, string> = {
   amused: '#f1c40f', tense: '#e74c3c', surprised: '#9b59b6', neutral: '#95a5a6',
 }
 const ENDINGS: Record<string, string> = {
-  ending_solve: 'The Truth Revealed',
-  ending_bittersweet: 'A Bittersweet Resolution',
-  ending_twist: 'Nothing Was As It Seemed',
+  ending_solve:        'The Truth Revealed',
+  ending_bittersweet:  'A Bittersweet Resolution',
+  ending_twist:        'Nothing Was As It Seemed',
+  ending_humorous:     'The Cat Gets Everything',
+  ending_supernatural: 'You Never Left',
 }
 
 export default function App() {
@@ -32,10 +36,17 @@ export default function App() {
   const [ending, setEnding] = useState<string | null>(null)
   const [imgVisible, setImgVisible] = useState(false)
   const [calibCount, setCalibCount] = useState(3)
+  const [selectedGenre, setSelectedGenre] = useState<string>('mystery')
 
   // Keep a stable ref to sendEmotion so the Gemini Live callback doesn't capture stale closures
   const sendEmotionRef = useRef<(r: EmotionReading) => void>(() => {})
   const frameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Refs to avoid stale closures in callbacks and interval handlers
+  const appStateRef = useRef<AppState>('idle')
+  const liveConnectedRef = useRef(false)
+  const startedRef = useRef(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [audioBlocked, setAudioBlocked] = useState(false)
 
   // ── Gemini Live API callback (called on each emotion reading from Gemini) ──
   const handleEmotion = useCallback((reading: EmotionReading) => {
@@ -53,7 +64,8 @@ export default function App() {
           setAssets(msg.assets)
           setScenesPlayed((p) => [...p, msg.assets.scene_id])
           setImgVisible(true)
-          if (appState !== 'ended') setAppState('playing')
+          // Only transition to playing if the film has been explicitly started
+          if (startedRef.current && appStateRef.current !== 'ended') setAppState('playing')
         }, 400)
         break
       case 'emotion':
@@ -70,10 +82,10 @@ export default function App() {
         break
       case 'error':
         console.error('Backend error:', msg.message)
-        if (appState === 'deciding') setAppState('playing')
+        if (appStateRef.current === 'deciding') setAppState('playing')
         break
     }
-  }, [appState])
+  }, [])
 
   const { videoRef, canvasRef, startCamera, stopCamera, captureFrame } = useCamera()
   const { connect: liveConnect, disconnect: liveDisconnect, sendFrame: liveSendFrame, connected: liveConnected } =
@@ -86,10 +98,17 @@ export default function App() {
     sendEmotionRef.current = sendEmotion
   }, [sendEmotion])
 
-  // Connect to backend WS on mount
+  // Keep refs in sync with state/connected values
+  useEffect(() => { appStateRef.current = appState }, [appState])
+  useEffect(() => { liveConnectedRef.current = liveConnected }, [liveConnected])
+
+  // Connect to backend WS on mount; clean up frame timer on unmount
   useEffect(() => {
     wsConnect()
-    return () => wsDisconnect()
+    return () => {
+      wsDisconnect()
+      if (frameTimerRef.current) clearInterval(frameTimerRef.current)
+    }
   }, [wsConnect, wsDisconnect])
 
   // ── Calibration countdown then start ──
@@ -119,11 +138,11 @@ export default function App() {
     // Connect Gemini Live API (handles empty key gracefully)
     await liveConnect(GEMINI_API_KEY)
 
-    // Start 8-second frame interval
+    // Start frame interval — read liveConnectedRef so the closure never goes stale
     frameTimerRef.current = setInterval(() => {
       const frame = captureFrame()
       if (frame) {
-        if (liveConnected) {
+        if (liveConnectedRef.current) {
           // Primary: Gemini Live API does emotion detection client-side
           liveSendFrame(frame)
         } else {
@@ -133,16 +152,18 @@ export default function App() {
       }
     }, FRAME_INTERVAL_MS)
 
-    wsSend({ type: 'start', genre: 'mystery' })
+    startedRef.current = true
+    wsSend({ type: 'start', genre: selectedGenre })
     setAppState('playing')
-  }, [startCamera, liveConnect, captureFrame, liveConnected, liveSendFrame, wsSend])
+  }, [startCamera, liveConnect, captureFrame, liveSendFrame, wsSend, selectedGenre])
 
   const handleStart = useCallback(() => {
     runCalibration(startFilm)
   }, [runCalibration, startFilm])
 
   const handleReset = useCallback(() => {
-    if (frameTimerRef.current) clearInterval(frameTimerRef.current)
+    if (frameTimerRef.current) { clearInterval(frameTimerRef.current); frameTimerRef.current = null }
+    startedRef.current = false
     liveDisconnect()
     stopCamera()
     setAppState('idle')
@@ -152,6 +173,7 @@ export default function App() {
     setScenesPlayed([])
     setEnding(null)
     setImgVisible(false)
+    setAudioBlocked(false)
     wsSend({ type: 'reset' })
   }, [liveDisconnect, stopCamera, wsSend])
 
@@ -170,7 +192,7 @@ export default function App() {
         </div>
         <div className="header-right">
           <span>Genre:</span>
-          <span className="genre-label">Mystery</span>
+          <span className="genre-label">{selectedGenre.charAt(0).toUpperCase() + selectedGenre.slice(1)}</span>
           <div className="header-sep" />
           {appState === 'playing' && <div className="rec-indicator"><div className="rec-dot" /><span>REC</span></div>}
         </div>
@@ -208,9 +230,11 @@ export default function App() {
 
           {assets?.image_base64 && (
             <img
+              key={assets.scene_id}
               className={`scene-img ${imgVisible ? 'visible' : ''}`}
               src={`data:image/png;base64,${assets.image_base64}`}
               alt="Scene"
+              style={{ '--scene-dur': `${assets.duration_seconds ?? 20}s` } as React.CSSProperties}
             />
           )}
           <div className="vignette" />
@@ -322,6 +346,16 @@ export default function App() {
       {/* ── CONTROLS ── */}
       <div className="controls">
         <div className="controls-left">
+          <select
+            className="genre-select"
+            value={selectedGenre}
+            onChange={e => setSelectedGenre(e.target.value)}
+            disabled={appState !== 'idle'}
+          >
+            {GENRES.map(g => (
+              <option key={g} value={g}>{g.charAt(0).toUpperCase() + g.slice(1)}</option>
+            ))}
+          </select>
           <button
             className="btn primary"
             onClick={handleStart}
@@ -384,14 +418,25 @@ export default function App() {
 
       {/* Hidden canvas for frame capture */}
       <canvas ref={canvasRef} style={{ display: 'none' }} width={320} height={240} />
-      {/* Audio player */}
+      {/* Audio player — autoPlay blocked in some browsers; fall back to a tap-to-play button */}
       {assets?.audio_base64 && (
         <audio
           key={assets.scene_id}
+          ref={(el) => {
+            audioRef.current = el
+            if (el) el.play().catch(() => setAudioBlocked(true))
+          }}
           src={`data:audio/wav;base64,${assets.audio_base64}`}
-          autoPlay
           style={{ display: 'none' }}
         />
+      )}
+      {audioBlocked && (
+        <button
+          className="btn audio-unblock"
+          onClick={() => { audioRef.current?.play(); setAudioBlocked(false) }}
+        >
+          ▶ Tap to enable audio
+        </button>
       )}
     </div>
   )
