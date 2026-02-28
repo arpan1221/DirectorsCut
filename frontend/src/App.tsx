@@ -55,6 +55,20 @@ export default function App() {
   const startedRef = useRef(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [audioBlocked, setAudioBlocked] = useState(false)
+  // Ending held here until audio finishes; fallback timer fires if audio is blocked
+  const pendingEndingRef = useRef<{ ending: string; scenes_played: string[] } | null>(null)
+  const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Trigger end screen — called from audio onEnded or fallback timer
+  const triggerEnded = useCallback(() => {
+    const p = pendingEndingRef.current
+    if (!p) return
+    pendingEndingRef.current = null
+    if (endTimerRef.current) { clearTimeout(endTimerRef.current); endTimerRef.current = null }
+    setEnding(p.ending)
+    setScenesPlayed(p.scenes_played)
+    setAppState('ended')
+  }, [])
 
   // ── Gemini Live API callback (called on each emotion reading from Gemini) ──
   const handleEmotion = useCallback((reading: EmotionReading) => {
@@ -84,9 +98,11 @@ export default function App() {
         // Director decides silently in the background — film keeps playing, no overlay
         break
       case 'complete':
-        setEnding(msg.ending)
-        setScenesPlayed(msg.scenes_played)
-        setAppState('ended')
+        // Store the ending; show end screen only after audio finishes (or fallback timer)
+        pendingEndingRef.current = { ending: msg.ending, scenes_played: msg.scenes_played }
+        // Fallback: scene duration + 4 s grace in case audio is blocked or very short
+        if (endTimerRef.current) clearTimeout(endTimerRef.current)
+        endTimerRef.current = setTimeout(triggerEnded, ((assets?.duration_seconds ?? 20) + 4) * 1000)
         break
       case 'error':
         console.error('Backend error:', msg.message)
@@ -178,6 +194,8 @@ export default function App() {
 
   const handleReset = useCallback(() => {
     if (frameTimerRef.current) { clearInterval(frameTimerRef.current); frameTimerRef.current = null }
+    if (endTimerRef.current) { clearTimeout(endTimerRef.current); endTimerRef.current = null }
+    pendingEndingRef.current = null
     startedRef.current = false
     liveDisconnect()
     stopCamera()
@@ -441,6 +459,7 @@ export default function App() {
             if (el) el.play().catch(() => setAudioBlocked(true))
           }}
           src={`data:audio/wav;base64,${assets.audio_base64}`}
+          onEnded={triggerEnded}
           style={{ display: 'none' }}
         />
       )}
