@@ -28,18 +28,20 @@ async def adapt_narration(
     pacing: str,
     emotion: EmotionSummary,
     scenes_played: list[str],
+    genre: str = "mystery",
 ) -> str:
     """
-    Rewrite the seed narration to match this viewer's specific emotional state.
+    Rewrite the seed narration to match this viewer's specific emotional state and genre.
     Falls back to the original seed on any failure — never crashes.
     """
     if not seed.strip():
         return seed
 
-    prompt = f"""You are the narrator of an adaptive mystery film called "The Inheritance".
+    prompt = f"""You are the narrator of an adaptive {genre} film called "The Inheritance".
 Rewrite this narration line to match a specific viewer's emotional state right now.
 
 Original narration: "{seed}"
+Genre: {genre}
 Viewer: {emotion.dominant_emotion.value} emotion, intensity {emotion.intensity_avg:.1f}/10, trend: {emotion.trend}
 Director's intent: mood={mood or 'neutral'}, pacing={pacing}
 Scene number: {len(scenes_played) + 1}
@@ -50,6 +52,8 @@ Adaptation rules — apply the one that matches the viewer:
 - CONFUSED → add a single grounding phrase, slow the rhythm
 - ENGAGED or AMUSED → deepen the atmosphere, lean into the mood, trust the viewer
 - All other states → serve the director's mood and pacing intent
+
+Genre atmosphere: use sensory details and vocabulary native to {genre} fiction.
 
 Return ONLY the adapted narration text (1-3 sentences).
 No quotes. No labels. No explanation. Just the narration."""

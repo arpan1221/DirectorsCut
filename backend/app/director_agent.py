@@ -11,6 +11,30 @@ from app.models import EmotionSummary, Pacing, SceneDecision, StoryState
 
 logger = logging.getLogger(__name__)
 
+
+def _setup_phoenix() -> None:
+    """Register LlamaIndex → Phoenix tracing. Silently skipped if Phoenix is unreachable."""
+    try:
+        from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk import trace as trace_sdk
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        endpoint = os.environ.get(
+            "PHOENIX_COLLECTOR_ENDPOINT", "http://phoenix:6006/v1/traces"
+        )
+        tracer_provider = trace_sdk.TracerProvider()
+        tracer_provider.add_span_processor(
+            BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint))
+        )
+        LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
+        logger.info("Phoenix tracing enabled → %s", endpoint)
+    except Exception as exc:
+        logger.warning("Phoenix tracing unavailable: %s", exc)
+
+
+_setup_phoenix()
+
 # Module-level story reference — refreshed each call so tool closures always see current data
 _story_data: dict = {}
 
@@ -41,9 +65,9 @@ def _get_workflow(genre: str = "mystery") -> AgentWorkflow:
         return _workflow
 
     llm = GoogleGenAI(
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         api_key=os.environ.get("GOOGLE_API_KEY", ""),
-        temperature=1.0,
+        temperature=0.4,
     )
 
     def get_scene(scene_id: str) -> str:

@@ -63,7 +63,8 @@ class SceneDecision(BaseModel):
 
 class SceneAssets(BaseModel):
     scene_id: str
-    image_base64: str | None = None
+    image_base64: str | None = None    # static fallback (PNG) when Veo is disabled/fails
+    video_base64: str | None = None    # base64-encoded MP4 from Veo (preferred)
     audio_base64: str | None = None
     narration_text: str
     mood: str

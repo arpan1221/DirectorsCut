@@ -7,13 +7,13 @@ A hackathon project for Gemini 3 NYC. A short film plays for a viewer. Their web
 
 ```
 Webcam Frame (every 8s)
-    → POST /api/emotion → Gemini 3 Flash → EmotionReading
+    → POST /api/emotion → Gemini 2.5 Flash → EmotionReading
     → EmotionAccumulator (rolling window of 8 readings)
     → At decision points: POST /api/director/decide
-        → Director Agent (Gemini 3 Pro) → SceneDecision
+        → Director Agent (Gemini 2.5 Flash) → SceneDecision
         → POST /api/content/generate (parallel)
             → Gemini 2.5 Flash Image → scene image
-            → Gemini 2.5 Flash TTS → narration audio
+            → Gemini 2.5 Pro TTS → narration audio
         → WebSocket pushes SceneAssets to frontend
     → Frontend renders: image + audio + emotion indicator
 ```
@@ -26,16 +26,23 @@ Webcam Frame (every 8s)
 - **Story data in:** `story.json` (static branching graph)
 - **Specs in:** `docs/specs/` (one per module)
 
-## Gemini Models & Budget ($25 total)
+## Gemini Models & Budget ($23.50 remaining — be cautious)
 
-| Task | Model | Cost/call | Notes |
+| Task | Model (actual API name) | Cost/call | Notes |
 |---|---|---|---|
-| Emotion detection | `gemini-3-flash` | ~$0.0003 | media_resolution: LOW, thinking: NONE, temp: 0.3 |
-| Director reasoning | `gemini-3-pro-preview` | ~$0.005 | thinking_level: medium, temp: 0.8 |
-| Scene images | `gemini-2.5-flash-image` | $0.039 | 1024px, 16:9. **NEVER use nano-banana-pro** |
-| Narration audio | `gemini-2.5-flash-preview-tts` | ~$0.002 | Slow speaking rate for drama |
+| Emotion detection | `gemini-2.5-flash` | ~$0.0003 | 10K paid RPD quota |
+| Director reasoning | `gemini-2.5-flash` | ~$0.001 | Only fires at 3 decision points per run |
+| Narrator adaptation | `gemini-2.5-flash` | ~$0.001 | Adapts narration to viewer emotion |
+| Scene images | `gemini-2.5-flash-image` | ~$0.039 | 95 free RPD. **NEVER use nano-banana-pro** |
+| Narration audio | `gemini-2.5-pro-preview-tts` | ~$0.003 | 50 RPD; Charon voice; confirmed working |
+| Video (demo only) | `veo-3.0-generate-001` | $0.90/scene | **VEO_ENABLED=false by default** — 10 RPD, only flip for live demo |
 
-**~$0.84 per full demo run. Budget for ~18 dev runs + 6 demo runs.**
+**~$0.45 per full run (image mode). ~$7.20 per run (Veo mode). ~52 image-mode dev runs remaining.**
+
+### Budget rules
+- Keep `VEO_ENABLED=false` for all dev/test runs
+- Only set `VEO_ENABLED=true` for the actual live demo (max 2 runs)
+- Cache means replaying the same story path costs $0 after first run
 
 ## CRITICAL RULES
 1. **Every Gemini API call** must be wrapped in try/except with a sensible fallback

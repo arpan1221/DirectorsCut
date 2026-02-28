@@ -1,4 +1,10 @@
 services:
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "6006:6006"   # UI + OTLP HTTP collector
+    restart: unless-stopped
+
   backend:
     build:
       context: .

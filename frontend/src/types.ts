@@ -30,6 +30,7 @@ export interface SceneData {
 
 export interface SceneAssets {
   scene_id: string
+  video_base64?: string | null
   image_base64: string | null
   audio_base64: string | null
   narration_text: string
