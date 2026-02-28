@@ -51,9 +51,13 @@ async def decide(
         response = client.models.generate_content(
             model="gemini-2.5-pro",
             contents=system_prompt,
-            config=types.GenerateContentConfig(temperature=0.8),
+            config=types.GenerateContentConfig(
+                temperature=1.0,  # thinking models require temp >= 1
+                thinking_config=types.ThinkingConfig(thinking_budget=1024),
+            ),
         )
-        data = json.loads(response.text)
+        raw = (response.text or "").strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        data = json.loads(raw)
         return SceneDecision(
             next_scene_id=data.get("next_scene_id", pre_selected),
             mood_shift=data.get("mood_shift"),
