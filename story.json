@@ -1,0 +1,213 @@
+{
+  "title": "The Inheritance",
+  "genre": "mystery",
+  "scenes": {
+    "opening": {
+      "id": "opening",
+      "chapter": "The Arrival",
+      "image_prompt": "Cinematic film still, mystery genre, moody atmosphere: A lone silhouette stands before a towering Victorian mansion at dusk. Fog rolls across a gravel driveway. A single warm light glows from an upstairs window. Dead ivy climbs the stone walls. 16:9 aspect ratio, dramatic rim lighting, desaturated cool tones.",
+      "narration": "The letter arrived three days ago. No return address. No signature. Just an address and two words: Come alone.",
+      "duration_seconds": 18,
+      "next": "foyer",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "foyer": {
+      "id": "foyer",
+      "chapter": "The Arrival",
+      "image_prompt": "Cinematic film still, mystery genre: A grand Victorian foyer seen from the entrance. A dusty chandelier hangs crooked. Faded portraits line the walls, their eyes seeming to follow. A wide staircase ascends into shadow. A single set of fresh footprints in the dust leads deeper inside. 16:9, low-key lighting, warm amber from chandelier contrasting cold blue moonlight from windows.",
+      "narration": "The front door was unlocked. Inside, the air tasted of dust and old wood, but something else lingered. Perfume. Fresh. As if someone had walked through just moments ago.",
+      "duration_seconds": 17,
+      "next": "sound_upstairs",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "sound_upstairs": {
+      "id": "sound_upstairs",
+      "chapter": "The Arrival",
+      "image_prompt": "Cinematic film still, mystery genre: Looking up a dark Victorian staircase from below. At the top, a faint strip of golden light spills from beneath a closed door. Dust particles float in a shaft of moonlight. The bannister casts long dramatic shadows. 16:9, extreme contrast, chiaroscuro lighting.",
+      "narration": "A sound from upstairs. Footsteps? Or just the old house settling? The light beneath that door flickered, as if someone had just walked past it.",
+      "duration_seconds": 15,
+      "next": "decision_1",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "decision_1": {
+      "id": "decision_1",
+      "chapter": "The Arrival",
+      "image_prompt": "",
+      "narration": "",
+      "duration_seconds": 0,
+      "next": null,
+      "is_decision_point": true,
+      "adaptation_rules": {
+        "engaged": "upstairs_door",
+        "tense": "upstairs_door",
+        "amused": "upstairs_door",
+        "bored": "figure_appears",
+        "neutral": "figure_appears",
+        "confused": "foyer_detail",
+        "surprised": "upstairs_door",
+        "default": "upstairs_door"
+      }
+    },
+    "upstairs_door": {
+      "id": "upstairs_door",
+      "chapter": "The Study",
+      "image_prompt": "Cinematic film still, mystery genre: A dark upstairs hallway of a Victorian mansion. Multiple closed doors on each side. One door at the end is slightly ajar, warm amber light spilling out. The wallpaper is peeling. A shadow moves behind the cracked door. 16:9, tension-building composition, shallow depth of field.",
+      "narration": "Each stair groaned underfoot. The hallway stretched longer than it should have. At the end, one door stood slightly open, light pouring through the crack like an invitation. Or a trap.",
+      "duration_seconds": 16,
+      "next": "study_reveal",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "figure_appears": {
+      "id": "figure_appears",
+      "chapter": "The Stranger",
+      "image_prompt": "Cinematic film still, mystery genre, high tension: A dark figure stands at the far end of the Victorian foyer, half-hidden in shadow. Only their silhouette is visible against a moonlit window. They are perfectly still, watching. The protagonist's shadow stretches toward them. 16:9, dramatic backlighting, film noir style.",
+      "narration": "A voice, calm and measured, came from behind. 'You're late. We've been waiting.' A figure stepped from the shadows. Their face was still hidden, but their voice carried the weight of someone used to being obeyed.",
+      "duration_seconds": 17,
+      "next": "hidden_room",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "foyer_detail": {
+      "id": "foyer_detail",
+      "chapter": "The Arrival",
+      "image_prompt": "Cinematic film still, mystery genre: Close-up of a Victorian foyer table. A half-burned candle, a set of old keys, and an envelope with a broken wax seal. The envelope has the same handwriting as the letter. Dust everywhere except around these objects — they were placed recently. 16:9, macro detail, warm candlelight.",
+      "narration": "Wait. On the side table, arranged with deliberate care: a candle still warm to the touch, a ring of iron keys, and another envelope. The same handwriting. This one read: 'You are not the first. You will not be the last.'",
+      "duration_seconds": 18,
+      "next": "upstairs_door",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "study_reveal": {
+      "id": "study_reveal",
+      "chapter": "The Study",
+      "image_prompt": "Cinematic film still, mystery genre: A cluttered Victorian study. Papers scattered across a mahogany desk. A wall of old photographs connected by red string. A fireplace with dying embers. On the desk, a photograph face-down. The room looks like someone left in a hurry. 16:9, warm firelight mixed with cold window light, detective thriller aesthetic.",
+      "narration": "The study was a storm of paper. Notes, photographs, newspaper clippings, all connected by lengths of red string pinned to the wall. Someone had been investigating something. For years. The photograph on the desk was face down. Slowly, you turned it over.",
+      "duration_seconds": 18,
+      "next": "decision_2",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "hidden_room": {
+      "id": "hidden_room",
+      "chapter": "The Stranger",
+      "image_prompt": "Cinematic film still, mystery genre: A hidden room beneath a Victorian staircase, revealed by a swung-open panel. Inside: a round table with five chairs. Three people sit in shadow, each holding an identical envelope. A single bare bulb hangs overhead. The mood is conspiratorial. 16:9, overhead harsh lighting, intimate and claustrophobic.",
+      "narration": "Behind the staircase, a panel swung open. Inside was a room that shouldn't exist. A round table. Three strangers, each clutching the same envelope. They looked up. One of them whispered: 'So there are five of us after all.'",
+      "duration_seconds": 18,
+      "next": "decision_2",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "decision_2": {
+      "id": "decision_2",
+      "chapter": "The Study",
+      "image_prompt": "",
+      "narration": "",
+      "duration_seconds": 0,
+      "next": null,
+      "is_decision_point": true,
+      "adaptation_rules": {
+        "engaged": "conspiracy_deep",
+        "tense": "conspiracy_deep",
+        "surprised": "conspiracy_deep",
+        "bored": "twist_reveal",
+        "neutral": "twist_reveal",
+        "amused": "dark_humor_beat",
+        "confused": "narrator_explains",
+        "default": "conspiracy_deep"
+      }
+    },
+    "conspiracy_deep": {
+      "id": "conspiracy_deep",
+      "chapter": "The Truth",
+      "image_prompt": "Cinematic film still, mystery genre: A wall of photographs and documents with red string connections forming a complex web. In the center, a faded family photograph shows five children standing before this very mansion. One face is circled in red. The protagonist's reflection is visible in the glass frame, and the circled face looks exactly like them. 16:9, revelation moment lighting, dramatic focus pull.",
+      "narration": "The red strings converged on a single photograph. Five children, standing before this very mansion, decades ago. And there, in the center, a face you recognized. Because it was yours.",
+      "duration_seconds": 17,
+      "next": "decision_3",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "twist_reveal": {
+      "id": "twist_reveal",
+      "chapter": "The Truth",
+      "image_prompt": "Cinematic film still, mystery genre, shock reveal: A mirror in a dark Victorian room. The protagonist stares at their reflection, but the reflection is wearing different clothes — older clothes, from decades past. Behind the reflection, the room looks pristine and new, as it was fifty years ago. 16:9, split reality composition, supernatural undertone.",
+      "narration": "The mirror in the hallway caught your eye. But the reflection wasn't right. The clothes were wrong. The room behind you looked new, unlived in. And in the mirror, the figure smiled. You did not.",
+      "duration_seconds": 18,
+      "next": "decision_3",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "dark_humor_beat": {
+      "id": "dark_humor_beat",
+      "chapter": "The Truth",
+      "image_prompt": "Cinematic film still, dark comedy meets mystery: A Victorian dining room set for a formal dinner. Every plate has a different cryptic note on it instead of food. One reads 'You should have stayed home.' A cat sits regally in the host's chair. The chandelier is slightly crooked. 16:9, absurdist composition, Wes Anderson meets Hitchcock.",
+      "narration": "The dining room was set for five. Instead of food, each plate held a folded note. Yours read: 'Congratulations. You're the only one who came willingly.' A ginger cat sat in the host's chair, watching with what could only be described as judgment.",
+      "duration_seconds": 17,
+      "next": "decision_3",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "narrator_explains": {
+      "id": "narrator_explains",
+      "chapter": "The Truth",
+      "image_prompt": "Cinematic film still, mystery genre: An overhead bird's-eye view of the entire Victorian mansion layout, like a dollhouse cross-section. Rooms are visible with tiny figures in them. Red dotted lines show the path the protagonist has taken. It looks like a board game. 16:9, architectural illustration style meets cinema, warm muted tones.",
+      "narration": "Let me catch you up. This mansion belonged to the Aldric family. Fifty years ago, the patriarch vanished, leaving his fortune to 'those who prove worthy.' Five letters were sent. You're one of five. Everyone in this house received the same invitation. And one of them already knows the secret.",
+      "duration_seconds": 20,
+      "next": "decision_3",
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "decision_3": {
+      "id": "decision_3",
+      "chapter": "The Truth",
+      "image_prompt": "",
+      "narration": "",
+      "duration_seconds": 0,
+      "next": null,
+      "is_decision_point": true,
+      "adaptation_rules": {
+        "engaged": "ending_solve",
+        "tense": "ending_bittersweet",
+        "surprised": "ending_twist",
+        "bored": "ending_twist",
+        "neutral": "ending_bittersweet",
+        "amused": "ending_solve",
+        "confused": "ending_bittersweet",
+        "default": "ending_solve"
+      }
+    },
+    "ending_solve": {
+      "id": "ending_solve",
+      "chapter": "The End",
+      "image_prompt": "Cinematic film still, mystery genre, triumphant resolution: Dawn breaks through the Victorian mansion windows. The protagonist stands at the patriarch's desk, holding a golden key. Behind them, the wall of red strings has been reorganized into a clear pattern. The other four strangers stand in the doorway, some looking relieved, some shocked. Golden morning light floods the room. 16:9, warm hopeful lighting, resolution composition.",
+      "narration": "By dawn, the pieces had fallen into place. The inheritance was never the fortune. It was the truth. The Aldric patriarch had hidden it here, in plain sight, waiting for someone curious enough to find it. You turned the key. And for the first time that night, you smiled.",
+      "duration_seconds": 20,
+      "next": null,
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "ending_bittersweet": {
+      "id": "ending_bittersweet",
+      "chapter": "The End",
+      "image_prompt": "Cinematic film still, mystery genre, melancholic resolution: The protagonist walks away from the Victorian mansion at dawn, gravel crunching underfoot. They carry a single photograph. Behind them, the mansion looms in morning mist. One window still glows. Their expression is thoughtful, carrying the weight of what they've learned. 16:9, bittersweet morning light, lone figure composition.",
+      "narration": "You left at dawn with nothing but a photograph and a truth you wished you didn't know. The inheritance was real, but its price was understanding what the Aldric family had done. Some doors, once opened, can never be closed. Behind you, one window still glowed. Someone was still inside. And they were watching you leave.",
+      "duration_seconds": 22,
+      "next": null,
+      "is_decision_point": false,
+      "adaptation_rules": null
+    },
+    "ending_twist": {
+      "id": "ending_twist",
+      "chapter": "The End",
+      "image_prompt": "Cinematic film still, mystery genre, final twist: The protagonist sits in the host's chair at the round table, now alone. Before them lies a new envelope — one they didn't bring. It has someone else's name on it. The camera angle suggests they have become what they set out to investigate. A sixth chair has appeared. 16:9, unsettling symmetry, circular narrative composition, cold blue tones.",
+      "narration": "The mansion was empty now. But on the table, a new envelope. Someone else's name. And in the handwriting you now recognized as your own. The door behind you closed. It locked. And somewhere in the walls, a clock began to tick. How long until the next one arrives?",
+      "duration_seconds": 22,
+      "next": null,
+      "is_decision_point": false,
+      "adaptation_rules": null
+    }
+  }
+}
