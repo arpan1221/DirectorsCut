@@ -132,7 +132,7 @@ async def generate_scene(
         try:
             narration_text = decision.override_narration or scene.narration
             response = await client.aio.models.generate_content(
-                model="gemini-2.5-flash-preview-tts",
+                model="gemini-2.5-pro-preview-tts",
                 contents=narration_text,
                 config=types.GenerateContentConfig(
                     response_modalities=["audio"],

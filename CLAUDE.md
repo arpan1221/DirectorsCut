@@ -13,7 +13,7 @@ Webcam Frame (every 8s)
         → Director Agent (Gemini 2.5 Flash) → SceneDecision
         → POST /api/content/generate (parallel)
             → Gemini 2.5 Flash Image → scene image
-            → Gemini 2.5 Flash TTS → narration audio
+            → Gemini 2.5 Pro TTS → narration audio
         → WebSocket pushes SceneAssets to frontend
     → Frontend renders: image + audio + emotion indicator
 ```
@@ -34,7 +34,7 @@ Webcam Frame (every 8s)
 | Director reasoning | `gemini-2.5-flash` | ~$0.001 | Only fires at 3 decision points per run |
 | Narrator adaptation | `gemini-2.5-flash` | ~$0.001 | Adapts narration to viewer emotion |
 | Scene images | `gemini-2.5-flash-image` | ~$0.039 | 95 free RPD. **NEVER use nano-banana-pro** |
-| Narration audio | `gemini-2.5-flash-preview-tts` | ~$0.002 | 101 RPD; Charon voice |
+| Narration audio | `gemini-2.5-pro-preview-tts` | ~$0.003 | 50 RPD; Charon voice; confirmed working |
 | Video (demo only) | `veo-3.0-generate-001` | $0.90/scene | **VEO_ENABLED=false by default** — 10 RPD, only flip for live demo |
 
 **~$0.45 per full run (image mode). ~$7.20 per run (Veo mode). ~52 image-mode dev runs remaining.**
