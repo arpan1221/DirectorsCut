@@ -154,13 +154,16 @@ async def generate_scene(
             logger.error(f"TTS generation failed for scene '{scene.id}': {e}")
             return None
 
-    # Run Veo (or no-op if disabled) and TTS in parallel
-    video_b64, audio_b64 = await asyncio.gather(gen_video(), gen_audio())
-
-    # If Veo produced nothing, fall back to static image — never leave a scene blank
+    # When Veo is enabled: run Veo + audio in parallel, then image fallback if Veo fails.
+    # When Veo is disabled (default): run image + audio in parallel — never sequential.
     image_b64: str | None = None
-    if video_b64 is None:
-        image_b64 = await gen_image()
+    if _VEO_ENABLED:
+        video_b64, audio_b64 = await asyncio.gather(gen_video(), gen_audio())
+        if video_b64 is None:
+            image_b64 = await gen_image()
+    else:
+        video_b64 = None
+        image_b64, audio_b64 = await asyncio.gather(gen_image(), gen_audio())
 
     assets = SceneAssets(
         scene_id=scene.id,

@@ -2,20 +2,29 @@ import json
 import logging
 import os
 
-from llama_index.core.agent import AgentWorkflow, FunctionAgent
-from llama_index.core.tools import FunctionTool
-from llama_index.llms.google_genai import GoogleGenAI
+from google import genai
+from google.genai import types
 
 from app import story_engine
 from app.models import EmotionSummary, Pacing, SceneDecision, StoryState
 
 logger = logging.getLogger(__name__)
 
+client = genai.Client()
+
+_SYSTEM_PROMPT = (
+    "You are the Director of an adaptive film called \"The Inheritance\".\n"
+    "Pick the next story branch based on the viewer's emotional state and genre.\n\n"
+    "Return ONLY a JSON object — no markdown, no explanation, no preamble:\n"
+    '{"next_scene_id": "...", "mood_shift": "tense"|"warm"|"mysterious"|null, '
+    '"pacing": "slow"|"medium"|"fast", "reasoning": "one sentence"}'
+)
+
 
 def _setup_phoenix() -> None:
-    """Register LlamaIndex → Phoenix tracing. Silently skipped if Phoenix is unreachable."""
+    """Register direct Gemini spans → Phoenix tracing. Silently skipped if Phoenix is unreachable."""
     try:
-        from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
+        from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk import trace as trace_sdk
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -27,7 +36,7 @@ def _setup_phoenix() -> None:
         tracer_provider.add_span_processor(
             BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint))
         )
-        LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
+        GoogleGenAIInstrumentor().instrument(tracer_provider=tracer_provider)
         logger.info("Phoenix tracing enabled → %s", endpoint)
     except Exception as exc:
         logger.warning("Phoenix tracing unavailable: %s", exc)
@@ -35,84 +44,12 @@ def _setup_phoenix() -> None:
 
 _setup_phoenix()
 
-# Module-level story reference — refreshed each call so tool closures always see current data
-_story_data: dict = {}
-
-# Lazy singleton workflow — created once after load_dotenv() has run
-_workflow: AgentWorkflow | None = None
-
-_SYSTEM_PROMPT_TEMPLATE = """You are the Director of an adaptive {genre} film called "The Inheritance".
-You decide which narrative branch to take at story decision points based on the viewer's emotional state. Lean into {genre} genre conventions and atmosphere in your decision-making.
-
-You have two tools:
-- get_scene(scene_id): returns full scene details (narration, chapter, image prompt, next scene)
-- get_branches(decision_scene_id): returns all available narrative branches at a decision point
-
-Your process:
-1. Call get_branches() on the decision point scene ID you are given
-2. Read the viewer's emotional state and story history
-3. Choose the branch that creates the most compelling {genre} experience for this specific viewer
-4. Return ONLY a JSON object — no markdown, no explanation, no preamble:
-{{"next_scene_id": "...", "mood_shift": "tense"|"warm"|"mysterious"|null, "pacing": "slow"|"medium"|"fast", "reasoning": "one sentence"}}\""""
-
-_SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.format(genre="mystery")
-
-
-def _get_workflow(genre: str = "mystery") -> AgentWorkflow:
-    global _workflow
-    # Rebuild workflow if genre changed (allows genre switching per session)
-    if _workflow is not None and getattr(_workflow, "_genre", None) == genre:
-        return _workflow
-
-    llm = GoogleGenAI(
-        model="gemini-2.5-flash",
-        api_key=os.environ.get("GOOGLE_API_KEY", ""),
-        temperature=0.4,
-    )
-
-    def get_scene(scene_id: str) -> str:
-        """Get full details of a scene by ID: narration, image prompt, chapter, and what comes next."""
-        try:
-            scene = story_engine.get_scene(scene_id, _story_data)
-            return scene.model_dump_json()
-        except ValueError as e:
-            return f"Error: {e}"
-
-    def get_branches(decision_scene_id: str) -> str:
-        """Get the available narrative branches at a decision point. Returns a JSON mapping of emotion states to next scene IDs."""
-        try:
-            scene = story_engine.get_scene(decision_scene_id, _story_data)
-            return json.dumps(story_engine.get_branches(scene))
-        except ValueError as e:
-            return f"Error: {e}"
-
-    system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(genre=genre)
-
-    agent = FunctionAgent(
-        name="Director",
-        description=f"Narrative director for a {genre} film that picks the next story branch based on viewer emotion",
-        system_prompt=system_prompt,
-        tools=[
-            FunctionTool.from_defaults(fn=get_scene),
-            FunctionTool.from_defaults(fn=get_branches),
-        ],
-        llm=llm,
-        verbose=False,
-    )
-
-    _workflow = AgentWorkflow(agents=[agent], root_agent="Director")
-    _workflow._genre = genre  # type: ignore[attr-defined]
-    return _workflow
-
 
 async def decide(
     emotion_summary: EmotionSummary,
     story_state: StoryState,
     story_data: dict,
 ) -> SceneDecision:
-    global _story_data
-    _story_data = story_data  # refresh so tool closures see current story
-
     current_scene = story_engine.get_scene(story_state.current_scene_id, story_data)
 
     # No next scene — stay put (ending reached)
@@ -121,36 +58,41 @@ async def decide(
 
     next_scene = story_engine.get_scene(current_scene.next, story_data)
 
-    # Linear advance — no agent call needed
+    # Linear advance — no LLM call needed
     if not next_scene.is_decision_point:
         return SceneDecision(next_scene_id=next_scene.id)
 
-    # Build fallback from emotion mapping in case agent fails
+    # Pre-compute fallback from emotion mapping
     valid_scenes = set(story_data.get("scenes", {}).keys())
-    adaptation_rules = story_engine.get_branches(next_scene)
+    branches = story_engine.get_branches(next_scene)
     emotion_str = emotion_summary.dominant_emotion.value
-    pre_selected = adaptation_rules.get(
-        emotion_str, adaptation_rules.get("default", list(adaptation_rules.values())[0])
-    )
+    pre_selected = branches.get(emotion_str, branches.get("default", list(branches.values())[0]))
 
     try:
         genre = story_state.genre or "mystery"
-        workflow = _get_workflow(genre)
 
+        # Relay mode: all context injected in one shot — zero tool round-trips
         prompt = (
-            f"You are at decision point '{next_scene.id}'.\n\n"
             f"Genre: {genre}\n"
+            f"Decision point: '{next_scene.id}'\n"
+            f"Available branches: {json.dumps(branches)}\n"
             f"Viewer emotional state: {emotion_summary.model_dump_json()}\n"
-            f"Scenes played so far: {', '.join(story_state.scenes_played) or 'none yet'}\n"
-            f"Simple emotion-mapped branch (your starting point): {pre_selected}\n\n"
-            f"Call get_branches('{next_scene.id}') to see all options, "
-            f"then return your JSON decision."
+            f"Scenes played: {', '.join(story_state.scenes_played) or 'none'}\n"
+            f"Emotion-mapped default: {pre_selected}\n\n"
+            f"Choose the branch that creates the most compelling {genre} experience for this viewer."
         )
 
-        handler = workflow.run(user_msg=prompt)
-        output = await handler
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=_SYSTEM_PROMPT,
+                temperature=0.8,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
 
-        raw = (output.response.content or "").strip()
+        raw = (response.text or "").strip()
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         data = json.loads(raw)
 
