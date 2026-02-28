@@ -1,3 +1,8 @@
+import os
+
+# Set dummy API key before any app module imports to prevent genai.Client() from failing
+os.environ.setdefault("GEMINI_API_KEY", "test-dummy-key-for-unit-tests")
+
 import pytest
 import json
 from pathlib import Path
