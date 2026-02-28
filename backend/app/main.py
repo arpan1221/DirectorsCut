@@ -34,7 +34,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 story_data: dict = {}
 _rest_state: StoryState = StoryState()
-sessions: dict[int, tuple[StoryState, EmotionAccumulator, int]] = {}
+# 4-tuple: (state, accumulator, frame_count, prefetch_task)
+# prefetch_task fires Veo generation for the *next* linear scene immediately after
+# the current scene starts, so the video is ready before the scene transition.
+sessions: dict[int, tuple[StoryState, EmotionAccumulator, int, "asyncio.Task[SceneAssets | None] | None"]] = {}
 _story_ready = asyncio.Event()
 
 
@@ -139,6 +142,29 @@ async def post_story_reset() -> StoryState:
 # ---------------------------------------------------------------------------
 
 
+async def _prefetch_next(scene: SceneData, genre: str) -> "SceneAssets | None":
+    """Pre-generate the next *linear* scene's assets while the current one plays.
+
+    Only fires for non-decision, non-ending next scenes.  At decision points we
+    don't know the branch yet, so we skip.  The result lands in the cache so the
+    transition handler finds it instantly.
+    """
+    if scene.next is None:
+        return None
+    try:
+        next_node = story_engine.get_scene(scene.next, story_data)
+    except ValueError:
+        return None
+    if next_node.is_decision_point:
+        return None
+    dummy_decision = SceneDecision(next_scene_id=next_node.id)
+    try:
+        return await content_pipeline.generate_scene(dummy_decision, next_node, genre=genre)
+    except Exception as e:
+        logger.warning(f"Prefetch failed for scene '{next_node.id}': {e}")
+        return None
+
+
 async def _generate_with_narrator(
     decision: SceneDecision,
     scene: SceneData,
@@ -146,6 +172,7 @@ async def _generate_with_narrator(
     state: StoryState,
 ) -> SceneAssets:
     """Run Narrator Agent to personalise narration, then generate scene assets."""
+    genre = state.genre or "mystery"
     if accumulator.history and scene.narration:
         adapted = await narrator_agent.adapt_narration(
             seed=scene.narration,
@@ -153,24 +180,31 @@ async def _generate_with_narrator(
             pacing=decision.pacing.value,
             emotion=accumulator.get_summary(),
             scenes_played=state.scenes_played,
+            genre=genre,
         )
         decision = decision.model_copy(update={"override_narration": adapted})
-    return await content_pipeline.generate_scene(decision, scene)
+    return await content_pipeline.generate_scene(decision, scene, genre=genre)
 
 
 async def _send_opening_scene(
     websocket: WebSocket,
     state: StoryState,
     accumulator: EmotionAccumulator,
-) -> tuple[StoryState, int]:
-    """Generate and send the opening scene. Returns updated state and reset frame_count=0."""
+) -> tuple[StoryState, int, "asyncio.Task[SceneAssets | None] | None"]:
+    """Generate and send the opening scene.
+
+    Returns (state, frame_count=0, prefetch_task) where prefetch_task has
+    already started generating the next linear scene's assets.
+    """
+    genre = state.genre or "mystery"
     opening_scene = story_engine.get_scene("opening", story_data)
     decision = SceneDecision(next_scene_id="opening")
-    assets = await content_pipeline.generate_scene(decision, opening_scene)
+    assets = await content_pipeline.generate_scene(decision, opening_scene, genre=genre)
     await websocket.send_text(
         json.dumps({"type": "scene", "assets": assets.model_dump(mode="json")})
     )
-    return state, 0
+    prefetch_task = asyncio.create_task(_prefetch_next(opening_scene, genre))
+    return state, 0, prefetch_task
 
 
 @app.websocket("/ws/session")
@@ -182,13 +216,10 @@ async def ws_session(websocket: WebSocket) -> None:
     state = StoryState()
     accumulator = EmotionAccumulator()
     frame_count = 0
-    sessions[id(websocket)] = (state, accumulator, frame_count)
+    prefetch_task: "asyncio.Task[SceneAssets | None] | None" = None
+    sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
     try:
-        # Send opening scene immediately on connect
-        state, frame_count = await _send_opening_scene(websocket, state, accumulator)
-        sessions[id(websocket)] = (state, accumulator, frame_count)
-
         async for raw in websocket.iter_text():
             try:
                 msg = json.loads(raw)
@@ -207,8 +238,8 @@ async def ws_session(websocket: WebSocket) -> None:
                 accumulator = EmotionAccumulator()
                 frame_count = 0
                 content_pipeline.clear_cache()
-                state, frame_count = await _send_opening_scene(websocket, state, accumulator)
-                sessions[id(websocket)] = (state, accumulator, frame_count)
+                state, frame_count, prefetch_task = await _send_opening_scene(websocket, state, accumulator)
+                sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
             # ----------------------------------------------------------------
             # "reset" — same as start but keep genre
@@ -218,8 +249,8 @@ async def ws_session(websocket: WebSocket) -> None:
                 accumulator = EmotionAccumulator()
                 frame_count = 0
                 content_pipeline.clear_cache()
-                state, frame_count = await _send_opening_scene(websocket, state, accumulator)
-                sessions[id(websocket)] = (state, accumulator, frame_count)
+                state, frame_count, prefetch_task = await _send_opening_scene(websocket, state, accumulator)
+                sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
             # ----------------------------------------------------------------
             # "emotion" — pre-computed reading from Gemini Live API (React)
@@ -233,7 +264,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 )
                 accumulator.add_reading(reading)
                 frame_count += 1
-                sessions[id(websocket)] = (state, accumulator, frame_count)
+                sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
                 current_scene = story_engine.get_scene(state.current_scene_id, story_data)
                 frames_needed = max(1, current_scene.duration_seconds // 15)
@@ -252,7 +283,11 @@ async def ws_session(websocket: WebSocket) -> None:
                     new_scene = story_engine.get_scene(decision.next_scene_id, story_data)
                     assets = await _generate_with_narrator(decision, new_scene, accumulator, state)
                     frame_count = 0
-                    sessions[id(websocket)] = (state, accumulator, frame_count)
+                    # Kick off prefetch for the next linear scene immediately
+                    prefetch_task = asyncio.create_task(
+                        _prefetch_next(new_scene, state.genre or "mystery")
+                    )
+                    sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
                     await websocket.send_text(
                         json.dumps({"type": "scene", "assets": assets.model_dump(mode="json")})
@@ -279,7 +314,7 @@ async def ws_session(websocket: WebSocket) -> None:
                 )
                 accumulator.add_reading(reading)
                 frame_count += 1
-                sessions[id(websocket)] = (state, accumulator, frame_count)
+                sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
                 # Check if it's time to advance
                 current_scene = story_engine.get_scene(state.current_scene_id, story_data)
@@ -302,10 +337,14 @@ async def ws_session(websocket: WebSocket) -> None:
                     state = story_engine.advance(state, decision.next_scene_id)
                     new_scene = story_engine.get_scene(decision.next_scene_id, story_data)
 
-                    # Narrator adapts narration, then content pipeline generates image + audio
+                    # Narrator adapts narration, then content pipeline generates video/image + audio
                     assets = await _generate_with_narrator(decision, new_scene, accumulator, state)
                     frame_count = 0
-                    sessions[id(websocket)] = (state, accumulator, frame_count)
+                    # Kick off prefetch for the next linear scene immediately
+                    prefetch_task = asyncio.create_task(
+                        _prefetch_next(new_scene, state.genre or "mystery")
+                    )
+                    sessions[id(websocket)] = (state, accumulator, frame_count, prefetch_task)
 
                     await websocket.send_text(
                         json.dumps({"type": "scene", "assets": assets.model_dump(mode="json")})

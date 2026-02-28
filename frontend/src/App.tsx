@@ -11,6 +11,13 @@ const FRAME_INTERVAL_MS = 15_000
 
 const GENRES = ['mystery', 'thriller', 'horror', 'sci-fi']
 
+const GENRE_TITLES: Record<string, string> = {
+  mystery:  'The Inheritance',
+  thriller: 'The Last Signal',
+  horror:   'The Haunting',
+  'sci-fi': 'The Inheritance Protocol',
+}
+
 const EMOTION_EMOJI: Record<string, string> = {
   engaged: '😊', bored: '😑', confused: '🤔',
   amused: '😄', tense: '😰', surprised: '😲', neutral: '😐',
@@ -73,7 +80,7 @@ export default function App() {
         setEmotionHistory((h) => [...h.slice(-7), msg.data.primary_emotion])
         break
       case 'deciding':
-        setAppState('deciding')
+        // Director decides silently in the background — film keeps playing, no overlay
         break
       case 'complete':
         setEnding(msg.ending)
@@ -82,7 +89,6 @@ export default function App() {
         break
       case 'error':
         console.error('Backend error:', msg.message)
-        if (appStateRef.current === 'deciding') setAppState('playing')
         break
     }
   }, [])
@@ -146,9 +152,17 @@ export default function App() {
           // Primary: Gemini Live API does emotion detection client-side
           liveSendFrame(frame)
         } else {
-          // Fallback: send raw frame to backend
+          // Fallback: send raw frame to backend for server-side analysis
           wsSend({ type: 'frame', data: frame })
         }
+      } else if (!liveConnectedRef.current) {
+        // No camera + no Gemini Live: send synthetic neutral reading so the story still advances
+        sendEmotionRef.current({
+          primary_emotion: 'neutral',
+          intensity: 5,
+          attention: 'screen',
+          confidence: 0.5,
+        })
       }
     }, FRAME_INTERVAL_MS)
 
@@ -206,8 +220,8 @@ export default function App() {
           {appState === 'idle' && (
             <div className="scene-overlay idle-overlay">
               <div className="idle-aperture" />
-              <p className="idle-text">The Inheritance</p>
-              <p className="idle-sub">An Adaptive Mystery Film</p>
+              <p className="idle-text">{GENRE_TITLES[selectedGenre] ?? 'The Inheritance'}</p>
+              <p className="idle-sub">An Adaptive {selectedGenre.charAt(0).toUpperCase() + selectedGenre.slice(1)} Film</p>
             </div>
           )}
 
@@ -219,16 +233,20 @@ export default function App() {
             </div>
           )}
 
-          {/* Director deciding overlay */}
-          {appState === 'deciding' && (
-            <div className="scene-overlay deciding-overlay">
-              <div className="deciding-ring" />
-              <div className="deciding-label">The Director Decides</div>
-              <div className="deciding-sub">Analysing your reactions</div>
-            </div>
-          )}
-
-          {assets?.image_base64 && (
+          {assets?.video_base64 ? (
+            // Veo video: muted so autoplay is allowed; TTS narration audio plays separately
+            <video
+              key={assets.scene_id}
+              className={`scene-img ${imgVisible ? 'visible' : ''}`}
+              src={`data:video/mp4;base64,${assets.video_base64}`}
+              autoPlay
+              muted
+              playsInline
+              loop
+              style={{ '--scene-dur': `${assets.duration_seconds ?? 20}s` } as React.CSSProperties}
+            />
+          ) : assets?.image_base64 ? (
+            // Static image fallback (Veo disabled or timed out)
             <img
               key={assets.scene_id}
               className={`scene-img ${imgVisible ? 'visible' : ''}`}
@@ -236,7 +254,7 @@ export default function App() {
               alt="Scene"
               style={{ '--scene-dur': `${assets.duration_seconds ?? 20}s` } as React.CSSProperties}
             />
-          )}
+          ) : null}
           <div className="vignette" />
         </section>
 
@@ -375,8 +393,7 @@ export default function App() {
           <span className={`ws-dot ${wsConnected ? 'connected' : 'error'}`} />
           {appState === 'idle' && 'Idle — press Start'}
           {appState === 'calibrating' && 'Calibrating…'}
-          {appState === 'playing' && 'Playing…'}
-          {appState === 'deciding' && 'Director is deciding…'}
+          {(appState === 'playing' || appState === 'deciding') && 'Playing…'}
           {appState === 'ended' && 'Film complete'}
         </div>
       </div>
